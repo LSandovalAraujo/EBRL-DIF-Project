@@ -1,0 +1,84 @@
+---
+title: "MIRT for Sam"
+author: "Luis Sandoval-Araujo"
+date: "2024-02-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+rm(list = ls())
+library(mirt) #looks like sam preferred mirt
+setwd("C:/Users/Luis/Dropbox/independent stuff/Year 1/Sam MIRT") #make my life easier
+```
+
+```{r}
+# clinical impairment scale(CIA; Bohn et al., 2008; Bohn & Fairburn, 2008; Kambanis MTurk Dataset)
+CIA = read.csv("Mturk_sexatbirthCIA_M1F2_noNAcases.csv") 
+CIA <-subset (CIA, (SAB==1 | SAB==2), select = c(CIA1:CIA16, SAB))
+CIA <-na.omit(CIA)
+range(CIA) #items range from 0-3
+head(CIA) 
+```
+
+```{r}
+mirtCluster()
+```
+
+```{r}
+#F1 = Personal impairment 
+#F2 = Social impairment 
+#F3 = Cognitive impairment
+fstruct3 = 'F1 = CIA2,CIA8,CIA9,CIA11,CIA14,CIA16
+F2 = CIA3,CIA7,CIA10,CIA12,CIA15
+F3 = CIA1,CIA4,CIA5,CIA6,CIA13' 
+``` 
+
+```{r}
+#running a CIA - looks like it follows the factor structure specified 
+mod1 <-mirt(CIA[,1:16], fstruct3)
+coef(mod1)
+summary(mod1, suppress = .25) 
+```
+
+```{r}
+CIA$SAB2<-ifelse(CIA$SAB==2, "F","M") #categorical variable
+CIA$SAB2 = as.factor(CIA$SAB2)
+
+#it looks like we need mirt.model() somewhere here
+```
+
+
+```{r}
+fstruct6 = mirt.model('F1=2,8,9,11,14,16
+                      F2=3,7,10,12,15
+                      F3=1,4,5,6,13
+                      COV = F1*F2*F3') #adding covariate to the model syntax
+
+multimod3 = multipleGroup(CIA[,1:16],
+                         model = fstruct6, 
+                         itemtype = 'graded', 
+                         group = CIA$SAB2, 
+                         invariance = c("CIA1", "CIA7", "CIA10",
+                                        "CIA12","CIA16", "free_means", "free_var"),
+                         method = 'QMCEM', 
+                         SE = TRUE) #literally just trying it again; items 1, 7, 10, 12, and 16 were identified as anchors based on unidimensional dif using lordif() 
+summary(multimod3)
+```
+
+```{r}
+dif3 <-DIF(multimod3, c('a1', 'a2', 'd1', 'd2', 'd3'),
+          p.adjust = 'BH', 
+          items2test=c(2:6,8:9,11,13:15), 
+          seq_stat= .01,
+          method = 'QMCEM') #we're doing it again
+dif3
+```
+
+```{r}
+
+```
+

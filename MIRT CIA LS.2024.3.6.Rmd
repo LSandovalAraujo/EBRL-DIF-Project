@@ -1,0 +1,281 @@
+---
+title: "MIRT for Sam"
+author: "Luis Sandoval-Araujo"
+date: "2024-02-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+rm(list = ls())
+library(mirt)
+library(tidyverse)
+library(haven)
+```
+
+```{r}
+#looks like sam preferred mirt
+setwd("C:/Users/Luis/Dropbox/independent stuff/Year 1/Sam MIRT") #make my life easier
+CIA = read_sav('Mturk_CIA_DemoCIA-only.sav')
+#CIA = read.csv("Mturk_sexatbirthCIA_M1F2_noNAcases.csv") #old file plz ignore
+```
+
+
+```{r, eval=FALSE}
+head(CIA)#looking at data real quick
+colnames(CIA)#seeing all the columns we need
+```
+```{r}
+#making a variable for GenderIdentity, 1 = not cisgender, 0 = cis or unknown
+CIA$NotCis = ifelse(CIA$TransMasc == 1 | CIA$TransFem == 1 | CIA$Genderqueer == 1 | CIA$Expansive == 1 | CIA$Agender == 1 | CIA$Andro == 1 | CIA$NonBinary == 1 | CIA$TwoSpirited == 1, 1, 0)
+CIA$NotCis = as.factor(CIA$NotCis)
+levels(CIA$NotCis) = list("cis/unknown"=0, "not cis"=1)
+table(CIA$NotCis) #596 identify as not cis
+
+#variable for Sexuality, 1 = not hetero, 0 = hetero or unknown
+CIA$NotHet = ifelse(CIA$Asexual == 1 | CIA$Bisexual == 1 | CIA$Gay == 1 | CIA$Lesbian == 1 | CIA$Pansexual == 1 | CIA$Queer == 1 | CIA$Questioning == 1 | CIA$Gray == 1 | CIA$Demisexual == 1 | CIA$SameGenderLoving == 1, 1, 0)
+CIA$NotHet = as.factor(CIA$NotHet)
+levels(CIA$NotHet) = list("het/unknown"=0, "not het"=1)
+table(CIA$NotHet) #804 identify as not hetero
+
+#coding sexual and gender minorities - cishet = 0, SGM = 1
+CIA$SGM = ifelse(CIA$NotCis == "not cis" | CIA$NotHet == "not het", 1, 0)
+table(CIA$SGM) #866 non-SGM, 916 SGM? hopefully that's right
+CIA$SGM = as.factor(CIA$SGM)
+levels(CIA$SGM) = list("cishet"=0, "SGM"=1)
+
+#coding AFAB vs. AMAB SGM, 1 = AMAB SGM, 2 = AFAB SGM
+xtabs(~CIA$SGM + CIA$SAB) #there are 337 AMAB SGM and 492 AFAB SGM
+CIA$SAB_SGM = ifelse(CIA$SGM == "SGM" & CIA$SAB == 1, 1, ifelse(CIA$SGM == "SGM" & CIA$SAB == 2, 2, NA))
+table(CIA$SAB_SGM) #yeah that lines up
+CIA$SAB_SGM = as.factor(CIA$SAB_SGM)
+
+#coding AFAB SGM vs. AFAB cishet, Hetero = 1, SGM = 2
+#gonna start by making an AFAB variable
+CIA$AFAB = ifelse(CIA$SAB == 2, 1, 0) #1028 AFAB, 1 = AFAB, 0 = Not AFAB
+xtabs(~CIA$SGM + CIA$AFAB) #there are 492 AFAB SGM, 536 AFAB cishet 
+CIA$AFAB_SGM = ifelse(CIA$AFAB == 1 & CIA$SGM == "SGM", 2, ifelse(CIA$AFAB == 1 & CIA$SGM == "cishet", 1, NA))
+
+#coding AMAB SGM vs. AMAB hetero
+CIA$AMAB = ifelse(CIA$SAB == 1, 1, 0) #709 AMAB
+xtabs(~CIA$SGM + CIA$AMAB) #there are 372 cishet AMAB and 337 SGM AMAB
+CIA$AMAB_SGM = ifelse(CIA$AMAB == 1 & CIA$SGM == "SGM", 2, ifelse(CIA$AMAB == 1 & CIA$SGM == "cishet", 1, NA)) #woo we got it right
+```
+
+```{r}
+# clinical impairment scale(CIA; Bohn et al., 2008; Bohn & Fairburn, 2008; Kambanis MTurk Dataset)
+
+CIA_SAB = subset(CIA, (SAB == 1 | SAB == 2), select = c(CIA1:CIA16, SAB))
+CIA_SAB = na.omit(CIA_SAB)
+range(CIA_SAB) #items range from 0-3
+head(CIA_SAB) 
+```
+
+```{r}
+cluster = mirtCluster()
+```
+
+```{r}
+#F1 = Personal impairment 
+#F2 = Social impairment 
+#F3 = Cognitive impairment
+fstruct3 = 'F1 = CIA2,CIA8,CIA9,CIA11,CIA14,CIA16
+F2 = CIA3,CIA7,CIA10,CIA12,CIA15
+F3 = CIA1,CIA4,CIA5,CIA6,CIA13' 
+``` 
+
+```{r}
+#mirt model on SAB
+mod1 <-mirt(CIA_SAB[,1:16], fstruct3)
+coef(mod1)
+summary(mod1, suppress = .25) 
+```
+
+```{r}
+CIA_SAB$SAB2<-ifelse(CIA_SAB$SAB==2, "F","M") #categorical variable
+CIA_SAB$SAB2 = as.factor(CIA_SAB$SAB2)
+
+#it looks like we need mirt.model() somewhere here
+```
+
+
+```{r}
+fstruct6 = mirt.model('F1=2,8,9,11,14,16
+                      F2=3,7,10,12,15
+                      F3=1,4,5,6,13
+                      COV = F1*F2*F3') #adding covariate to the model syntax
+
+multimod3 = multipleGroup(CIA_SAB[,1:16],
+                         model = fstruct6, 
+                         itemtype = 'graded', 
+                         group = CIA_SAB$SAB2, 
+                         invariance = c("CIA1", "CIA7", "CIA10",
+                                        "CIA12","CIA16", "free_means", "free_var"),
+                         method = 'QMCEM', 
+                         SE = TRUE, 
+                         mirtCluster = cluster) #SE.type = "sandwich") 
+#literally just trying it again; items 1, 7, 10, 12, and 16 were identified as anchors based on unidimensional dif using lordif() according to sam
+#sam picked a seed of 15
+#default EM method will not run after 26 iterations
+summary(multimod3)
+```
+
+```{r}
+dif3 <-DIF(multimod3, c('a1', 'a2', 'd1', 'd2', 'd3'),
+          p.adjust = 'BH', 
+          items2test=c(2:6,8:9,11,13:15), 
+          seq_stat= .01,
+          method = 'QMCEM') 
+dif3
+```
+
+```{r}
+itemfit(multimod3, S_X2.plot = 2)
+```
+```{r}
+CIA_SGM = CIA
+CIA_SGM$SGM_num = as.numeric(CIA_SGM$SGM)
+CIA_SGM$SGM_num = ifelse(CIA_SGM$SGM_num == 1, 0, 1)
+CIA_SGM = subset(CIA_SGM, SGM_num == 1 | SGM_num == 0)
+
+write.csv(CIA_SGM, "CIA_SGM.csv")
+```
+
+```{r}
+#let's start looking at AFAB vs AMAB SGM
+CIA_SABbySGM = subset(CIA, SAB_SGM >= 1, select = c(CIA1:CIA16, SAB_SGM))
+CIA_SABbySGM$SAB_SGM = as.factor(CIA_SABbySGM$SAB_SGM)
+levels(CIA_SABbySGM$SAB_SGM) = list("AMAB_SGM"=1, "AFAB_SGM"=2) #1 = AMAB SGM, 2 = AFAB SGM
+
+
+SABbySGM = multipleGroup(CIA_SABbySGM[,1:16],
+                         model = fstruct6, 
+                         itemtype = 'graded', 
+                         group = CIA_SABbySGM$SAB_SGM, 
+                         invariance = c("CIA1", "CIA7", "CIA10",
+                                        "CIA12","CIA16", "free_means", "free_var"),
+                         method = 'QMCEM', 
+                         SE = TRUE, 
+                         mirtCluster = cluster)
+```
+```{r}
+dif_sab_sgm <-DIF(SABbySGM, c('a1', 'a2', 'd1', 'd2', 'd3'),
+          p.adjust = 'BH', 
+          items2test=c(2:6,8:9,11,13:15), 
+          seq_stat= .01,
+          method = 'QMCEM') 
+
+dif_sab_sgm
+```
+```{r}
+library (ltm)
+library(lordif)
+
+#running lordif to find anchors for cishet vs sgm comparison
+#thanks sam for the... code, i guess
+CIA_SGM_subset <- subset(CIA_SGM,(SGM_num==0 |SGM_num==1), select = c(CIA1:CIA16, SGM))
+CIA_SGM_subset <-na.omit(CIA_SGM_subset) 
+
+#Fit constrained GRM
+mod1 <-grm(CIA_SGM_subset[,1:16], constrained= TRUE)
+mod1
+#Dscrmn = discrimination parameter (constrained set to true, so constant)
+#Extrmt = extremity parameters; 1 = CIA "ability level" at 50% chance selecting option 1; 
+# 2 = ability level of CIA at 50% chance of selecting option 1 or2; 3, options 1,2,3, etc.
+
+#Fit non-constrained GRM
+#Dscrmn now different across different items
+mod2 <- grm(CIA_SGM_subset[,1:16])
+mod2
+
+#Compare fit of constrained versus non-constrained GRM with 
+#likelihood ratio test 
+#if significant ANOVA - non-constrained model (model 2) showed improvement in fit 
+anova(mod1,mod2)
+
+#Plot Item Response Characteristic Curve (IRCC)
+plot(mod2)
+
+#Plot Test Information Function (TIF)
+#when you set items to zero, gives entire TIF, but can also 
+#set items equal to the one(s) you want to look at
+plot(mod2, type="IIC", items=0)
+
+#Plot Item Information Function (IIF) for each item
+plot(mod2, type="IIC")
+
+#Estimates of Clinical Impairment (i.e., theta) by participant
+#Expected range (-3 <= theta <= 3)
+est <-factor.scores(mod2)
+
+#show first ten participants only
+#look at negative values - see # participants pulling at lower level of 'ability' on CIA
+est$score.dat$z1[1:16]
+
+CIA_SGM_subset$SGM = as.numeric(CIA_SGM_subset$SGM)
+cvntDIF <-lordif(as.data.frame(CIA_SGM_subset[,1:16]), group = CIA_SGM_subset$SGM, criterion = 'Chisqr', alpha = 0.01)
+cvntDIF
+
+###################
+#FOR INTERPRETATION
+###################
+#ncat refers to number of categories for each item (CIA items 0-3; 4 ncat)
+#three nested OLR models & chisq test compares each pair of three tests;
+#first column compares model 1 and model 2 - tries to detect uniform DIF
+#second looks at both uniform & non-uniform DIF
+#third column tries to detect just non-uniform
+
+#uniform DIF = constant across levels of ability 
+#non-uniform = differs across levels of ability 
+#Flagged as DIF item if ONE of the above tests is significant 
+#############################################################################
+
+plot(cvntDIF, labels = c('cishet', 'shestheysgays'))
+```
+
+
+
+
+
+```{r}
+#tabling this for now 
+#running for bias between sex at birth for cishet people
+CIA_CIS = CIA
+CIA_CIS$CisMan = as.numeric(CIA_CIS$CisMan)
+CIA_CIS$CisWoman = as.numeric(CIA_CIS$CisWoman)
+CIA_CIS$Hetero = as.numeric(CIA_CIS$Hetero)
+CIA_CIS$isCishet = ifelse(CIA_CIS$CisMan == 1 | CIA_CIS$CisWoman == 1 & CIA_CIS$Hetero == 1, 1, 0)
+CIA_CIS = subset(CIA_CIS, isCishet == 1) #idk why this kept cases where Hetero = 0
+CIA_CIS = subset(CIA_CIS, Hetero == 1) #this fixes it but there are 4 cases where CisMan == 1 and CisWoman == 1, so need to drop them somehow
+CIA_CIS$doublecalc = CIA_CIS$CisMan + CIA_CIS$CisWoman #calculating if these two variables combined == 2, we know they endorsed both
+CIA_CIS$isCishet = ifelse(CIA_CIS$doublecalc == 2, NA, CIA_CIS$isCishet) #turning cases where both CisMan and CisWoman are endorsed into NAs
+CIA_CIS = CIA_CIS[!is.na(CIA_CIS$isCishet),] #yay we got rid of them
+
+CIA_CIS$SAB = as.factor(CIA_CIS$SAB)
+#subsetting to keep just CIA items and SAB
+CIA_CIS = subset(CIA_CIS, CIA_CIS$isCishet == 1, select = c(CIA1:CIA16, SAB))
+
+#we don't need another variable for assigned sex at birth by cishet status i think - it's assumed that sex assignment at birth is congruent with their gender identity, so this is basically the same model as the F vs. M one except 
+CisHet = multipleGroup(CIA_CIS[,1:16],
+                         model = fstruct6, 
+                         itemtype = 'graded', 
+                         group = CIA_CIS$SAB, 
+                         invariance = c("CIA1", "CIA7", "CIA10",
+                                        "CIA12","CIA16", "free_means", "free_var"),
+                         method = 'QMCEM', 
+                         SE = TRUE,
+                       TOL = .00001,
+                       mirtCluster = cluster)
+```
+
+```{r}
+dif_cishet <-DIF(CisHet, c('a1', 'a2', 'd1', 'd2', 'd3'),
+          p.adjust = 'BH', 
+          items2test=c(2:6,8:9,11,13:15), 
+          seq_stat= .01,
+          method = 'QMCEM') 
+```
+
