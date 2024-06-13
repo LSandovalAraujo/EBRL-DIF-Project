@@ -28,47 +28,90 @@ CIA = read_sav('Mturk_CIA_DemoCIA-only.sav')
 head(CIA)#looking at data real quick
 colnames(CIA)#seeing all the columns we need
 ```
-```{r}
-#making a variable for GenderIdentity, 1 = not cisgender, 0 = cis or unknown
-CIA$NotCis = ifelse(CIA$TransMasc == 1 | CIA$TransFem == 1 | CIA$Genderqueer == 1 | CIA$Expansive == 1 | CIA$Agender == 1 | CIA$Andro == 1 | CIA$NonBinary == 1 | CIA$TwoSpirited == 1, 1, 0)
-CIA$NotCis = as.factor(CIA$NotCis)
-levels(CIA$NotCis) = list("cis/unknown"=0, "not cis"=1)
-table(CIA$NotCis) #596 identify as not cis
 
-#variable for Sexuality, 1 = not hetero, 0 = hetero or unknown
-CIA$NotHet = ifelse(CIA$Asexual == 1 | CIA$Bisexual == 1 | CIA$Gay == 1 | CIA$Lesbian == 1 | CIA$Pansexual == 1 | CIA$Queer == 1 | CIA$Questioning == 1 | CIA$Gray == 1 | CIA$Demisexual == 1 | CIA$SameGenderLoving == 1, 1, 0)
-CIA$NotHet = as.factor(CIA$NotHet)
-levels(CIA$NotHet) = list("het/unknown"=0, "not het"=1)
-table(CIA$NotHet) #804 identify as not hetero
+
+```{r}
+CIA = CIA[complete.cases(CIA[,58:73]),] #removing cases where CIA answers were not provided
+count(CIA) #4 removed for NA - correct
+```
+```{r}
+SAB = subset(CIA, (SAB == 1 | SAB == 2)) #only participants that answered SAB with 1 or 2 - final n = 1733
+```
+
+```{r}
+#making a variable for GenderIdentity, 1 = not cisgender, 0 = cis, NA = notsure/PNTA
+xtabs(~NotSure + PNTA_gender, SAB) #there are 1508 cases that are not notsure/PNTA
+SAB$NotCis = ifelse(SAB$PNTA_gender == 1, NA, ifelse(
+  SAB$TransMasc == 1 | SAB$TransFem == 1 | SAB$Genderqueer == 1 | SAB$Expansive == 1 | 
+    SAB$Agender == 1 | SAB$Andro == 1 | SAB$NonBinary == 1 | SAB$TwoSpirited == 1, 
+  1, 
+  ifelse(
+    SAB$CisMan == 1 | SAB$CisWoman == 1, 
+    0, NA)))
+SAB$NotCis = as.factor(SAB$NotCis)
+levels(SAB$NotCis) = list("cis"=0, "not cis"=1)
+table(SAB$NotCis) 
+#565 identify as not cis, 923 cis
+#565 + 923 = 1488 - there's 4 additional participants here. participants were excluded if they put PNTA, regardless of if they endorsed something else. if participants only put 'not sure', they were excluded, but were included if they endorsed any other characteristic aside from cis
+
+
+
+#variable for Sexuality, 1 = not hetero, 0 = hetero
+table(SAB$PNTA_sexorientation) #62 participants PNTA sexual orientation
+SAB$NotHet = ifelse(
+  SAB$PNTA_sexorientation == 1,
+  NA,
+  ifelse(
+    SAB$Asexual == 1 | SAB$Bisexual == 1 | SAB$Gay == 1 | SAB$Lesbian == 1 | SAB$Pansexual == 1 | SAB$Queer == 1 | SAB$Questioning == 1 | SAB$Gray == 1 | SAB$Demisexual == 1 | SAB$SameGenderLoving == 1, 1, 
+    ifelse(SAB$Hetero == 1, 0, NA)))
+
+SAB$NotHet = as.factor(SAB$NotHet)
+levels(SAB$NotHet) = list("het"=0, "not het"=1)
+table(SAB$NotHet) 
+#771 identify as not hetero, 894 het
+#1733 - 62 = 1671
+#771 + 894 = 1665, 6 missing
+
+
 
 #coding sexual and gender minorities - cishet = 0, SGM = 1
-CIA$SGM = ifelse(CIA$NotCis == "not cis" | CIA$NotHet == "not het", 1, 0)
-table(CIA$SGM) #866 non-SGM, 916 SGM? hopefully that's right
-CIA$SGM = as.factor(CIA$SGM)
-levels(CIA$SGM) = list("cishet"=0, "SGM"=1)
+SAB$SGM = ifelse(SAB$NotCis == "not cis" | SAB$NotHet == "not het", 1, 0)
+table(SAB$SGM) #759 non-SGM, 825 SGM, total = 1584
+SAB$SGM = as.factor(SAB$SGM)
+levels(SAB$SGM) = list("cishet"=0, "SGM"=1)
+
+
+
 
 #coding AFAB vs. AMAB SGM, 1 = AMAB SGM, 2 = AFAB SGM
-xtabs(~CIA$SGM + CIA$SAB) #there are 337 AMAB SGM and 492 AFAB SGM
-CIA$SAB_SGM = ifelse(CIA$SGM == "SGM" & CIA$SAB == 1, 1, ifelse(CIA$SGM == "SGM" & CIA$SAB == 2, 2, NA))
-table(CIA$SAB_SGM) #yeah that lines up
-CIA$SAB_SGM = as.factor(CIA$SAB_SGM)
+xtabs(~SAB$SGM + SAB$SAB) #there are 335 AMAB SGM and 490 AFAB SGM
+SAB$SAB_SGM = ifelse(SAB$SGM == "SGM" & SAB$SAB == 1, 1, ifelse(SAB$SGM == "SGM" & SAB$SAB == 2, 2, NA))
+table(SAB$SAB_SGM) #yeah that lines up
+SAB$SAB_SGM = as.factor(SAB$SAB_SGM)
+
+
+
 
 #coding AFAB SGM vs. AFAB cishet, Hetero = 1, SGM = 2
 #gonna start by making an AFAB variable
-CIA$AFAB = ifelse(CIA$SAB == 2, 1, 0) #1028 AFAB, 1 = AFAB, 0 = Not AFAB
-xtabs(~CIA$SGM + CIA$AFAB) #there are 492 AFAB SGM, 536 AFAB cishet 
-CIA$AFAB_SGM = ifelse(CIA$AFAB == 1 & CIA$SGM == "SGM", 2, ifelse(CIA$AFAB == 1 & CIA$SGM == "cishet", 1, NA))
+SAB$AFAB = ifelse(SAB$SAB == 2, 1, 0) #1026 AFAB, 1 = AFAB, 0 = Not AFAB
+xtabs(~SAB$SGM + SAB$AFAB) #there are 490 AFAB SGM, 444 AFAB cishet, that's 934... where are the rest
+SAB$AFAB_SGM = ifelse(SAB$AFAB == 1 & SAB$SGM == "SGM", 2, ifelse(SAB$AFAB == 1 & SAB$SGM == "cishet", 1, NA))
+
+
+
 
 #coding AMAB SGM vs. AMAB hetero
-CIA$AMAB = ifelse(CIA$SAB == 1, 1, 0) #709 AMAB
-xtabs(~CIA$SGM + CIA$AMAB) #there are 372 cishet AMAB and 337 SGM AMAB
-CIA$AMAB_SGM = ifelse(CIA$AMAB == 1 & CIA$SGM == "SGM", 2, ifelse(CIA$AMAB == 1 & CIA$SGM == "cishet", 1, NA)) #woo we got it right
+SAB$AMAB = ifelse(SAB$SAB == 1, 1, 0) #707 AMAB
+xtabs(~SAB$SGM + SAB$AMAB) #there are 315 cishet AMAB and 335 SGM AMAB. that's 650 participants 
+SAB$AMAB_SGM = ifelse(SAB$AMAB == 1 & SAB$SGM == "SGM", 2, ifelse(SAB$AMAB == 1 & SAB$SGM == "cishet", 1, NA)) #woo we got it right
 ```
+
 
 ```{r}
 # clinical impairment scale(CIA; Bohn et al., 2008; Bohn & Fairburn, 2008; Kambanis MTurk Dataset)
 
-CIA_SAB = subset(CIA, (SAB == 1 | SAB == 2), select = c(CIA1:CIA16, SAB))
+CIA_SAB = subset(SAB, (SAB == 1 | SAB == 2), select = c(CIA1:CIA16, SAB))
 CIA_SAB = na.omit(CIA_SAB)
 range(CIA_SAB) #items range from 0-3
 head(CIA_SAB) 
@@ -135,6 +178,7 @@ dif3
 ```{r}
 itemfit(multimod3, S_X2.plot = 2)
 ```
+
 ```{r}
 CIA_SGM = CIA
 CIA_SGM$SGM_num = as.numeric(CIA_SGM$SGM)
@@ -161,6 +205,7 @@ SABbySGM = multipleGroup(CIA_SABbySGM[,1:16],
                          SE = TRUE, 
                          mirtCluster = cluster)
 ```
+
 ```{r}
 dif_sab_sgm <-DIF(SABbySGM, c('a1', 'a2', 'd1', 'd2', 'd3'),
           p.adjust = 'BH', 
@@ -170,6 +215,7 @@ dif_sab_sgm <-DIF(SABbySGM, c('a1', 'a2', 'd1', 'd2', 'd3'),
 
 dif_sab_sgm
 ```
+
 ```{r}
 library (ltm)
 library(lordif)
@@ -235,9 +281,6 @@ cvntDIF
 
 plot(cvntDIF, labels = c('cishet', 'shestheysgays'))
 ```
-
-
-
 
 
 ```{r}
